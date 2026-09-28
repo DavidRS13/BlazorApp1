@@ -1,0 +1,337 @@
+@page "/todo"
+@rendermode InteractiveServer
+
+<PageTitle>Todo List</PageTitle>
+
+<h1>Todo List</h1>
+<p class="text-muted">A simple interactive task manager</p>
+
+<div class="todo-container mt-4">
+    <!-- Add new todo form -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Add New Task</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <input @bind="newTodoTitle" 
+                           @bind:event="oninput"
+                           placeholder="Enter task description..."
+                           class="form-control" 
+                           @onkeypress="HandleKeyPress" />
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-success w-100" @onclick="AddTodo" disabled="@string.IsNullOrWhiteSpace(newTodoTitle)">
+                        <i class="bi bi-plus-circle"></i> Add Task
+                    </button>
+                </div>
+            </div>
+            @if (hasValidationError)
+            {
+                <div class="alert alert-danger mt-2" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i> Task description cannot be empty
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Todo list -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Tasks (@GetPendingCount() pending)</h5>
+                <div>
+                    <button class="btn btn-outline-secondary btn-sm" @onclick="ToggleCompletedVisibility">
+                        @if (showCompleted)
+                        {
+                            <span>Hide Completed</span>
+                        }
+                        else
+                        {
+                            <span>Show Completed</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        @if (!todos.Any())
+        {
+            <div class="card-body text-center py-5">
+                <i class="bi bi-check-circle-fill text-muted" style="font-size: 3rem;"></i>
+                <h5 class="mt-3">No tasks yet</h5>
+                <p class="text-muted">Add your first task above to get started!</p>
+            </div>
+        }
+        else
+        {
+            <ul class="list-group list-group-flush">
+                @foreach (var todo in GetFilteredTodos())
+                {
+                    <li class="list-group-item todo-item @(todo.IsCompleted ? "completed" : "")">
+                        <div class="d-flex align-items-center">
+                            <div class="form-check me-3">
+                                <input type="checkbox" 
+                                       class="form-check-input" 
+                                       checked="@todo.IsCompleted"
+                                       @onchange="@(() => ToggleTodo(todo))" />
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-0 @(todo.IsCompleted ? "text-decoration-line-through text-muted" : "")">
+                                            @todo.Title
+                                        </h6>
+                                        @if (todo.IsCompleted)
+                                        {
+                                            <small class="text-success">
+                                                <i class="bi bi-check-circle-fill"></i> Completed on @todo.CompletedDate?.ToShortDateString()
+                                            </small>
+                                        }
+                                        else
+                                        {
+                                            <small class="text-muted">
+                                                Added on @todo.CreatedDate.ToShortDateString()
+                                            </small>
+                                        }
+                                    </div>
+                                    <div>
+                                        @if (!todo.IsCompleted)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary me-1" 
+                                                    @onclick="() => EditTodo(todo)"
+                                                    title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                        }
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                @onclick="() => DeleteTodo(todo)"
+                                                title="Delete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                }
+            </ul>
+            
+            <div class="card-footer">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        @GetPendingCount() pending, @GetCompletedCount() completed
+                    </small>
+                    @if (GetCompletedCount() > 0)
+                    {
+                        <button class="btn btn-outline-danger btn-sm" @onclick="ClearCompleted">
+                            <i class="bi bi-trash"></i> Clear Completed
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Edit Modal -->
+@if (editingTodo != null)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Task</h5>
+                    <button type="button" class="btn-close" @onclick="CancelEdit"></button>
+                </div>
+                <div class="modal-body">
+                    <input @bind="editingTodo.Title" 
+                           @bind:event="oninput"
+                           class="form-control"
+                           @onkeypress="HandleEditKeyPress" />
+                    @if (hasEditValidationError)
+                    {
+                        <div class="alert alert-danger mt-2" role="alert">
+                            <i class="bi bi-exclamation-triangle"></i> Task description cannot be empty
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveEdit" disabled="@string.IsNullOrWhiteSpace(editingTodo.Title)">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .todo-container {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    
+    .todo-item {
+        transition: all 0.3s ease;
+    }
+    
+    .todo-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .todo-item.completed {
+        opacity: 0.8;
+        background-color: #f8f9fa;
+    }
+    
+    .form-check-input:checked {
+        background-color: #198754;
+        border-color: #198754;
+    }
+    
+    .modal {
+        backdrop-filter: blur(2px);
+    }
+</style>
+
+@code {
+    private List<TodoItem> todos = new();
+    private string newTodoTitle = string.Empty;
+    private TodoItem? editingTodo = null;
+    private bool hasValidationError = false;
+    private bool hasEditValidationError = false;
+    private bool showCompleted = true;
+    
+    protected override void OnInitialized()
+    {
+        // Add some sample todos
+        todos.Add(new TodoItem { Id = 1, Title = "Learn Blazor basics", IsCompleted = true, CompletedDate = DateTime.Now.AddDays(-2) });
+        todos.Add(new TodoItem { Id = 2, Title = "Build Todo List component", IsCompleted = true, CompletedDate = DateTime.Now.AddDays(-1) });
+        todos.Add(new TodoItem { Id = 3, Title = "Add form validation example", IsCompleted = false });
+        todos.Add(new TodoItem { Id = 4, Title = "Implement dark/light theme toggle", IsCompleted = false });
+        todos.Add(new TodoItem { Id = 5, Title = "Test the application", IsCompleted = false });
+    }
+    
+    private void AddTodo()
+    {
+        if (string.IsNullOrWhiteSpace(newTodoTitle))
+        {
+            hasValidationError = true;
+            return;
+        }
+        
+        hasValidationError = false;
+        
+        var newTodo = new TodoItem
+        {
+            Id = todos.Any() ? todos.Max(t => t.Id) + 1 : 1,
+            Title = newTodoTitle.Trim(),
+            CreatedDate = DateTime.Now,
+            IsCompleted = false
+        };
+        
+        todos.Insert(0, newTodo);
+        newTodoTitle = string.Empty;
+    }
+    
+    private void HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddTodo();
+        }
+    }
+    
+    private void HandleEditKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && editingTodo != null && !string.IsNullOrWhiteSpace(editingTodo.Title))
+        {
+            SaveEdit();
+        }
+    }
+    
+    private void EditTodo(TodoItem todo)
+    {
+        editingTodo = new TodoItem
+        {
+            Id = todo.Id,
+            Title = todo.Title,
+            CreatedDate = todo.CreatedDate,
+            IsCompleted = todo.IsCompleted,
+            CompletedDate = todo.CompletedDate
+        };
+        hasEditValidationError = false;
+    }
+    
+    private void SaveEdit()
+    {
+        if (editingTodo == null || string.IsNullOrWhiteSpace(editingTodo.Title))
+        {
+            hasEditValidationError = true;
+            return;
+        }
+        
+        var existingTodo = todos.FirstOrDefault(t => t.Id == editingTodo.Id);
+        if (existingTodo != null)
+        {
+            existingTodo.Title = editingTodo.Title.Trim();
+        }
+        
+        editingTodo = null;
+        hasEditValidationError = false;
+    }
+    
+    private void CancelEdit()
+    {
+        editingTodo = null;
+        hasEditValidationError = false;
+    }
+    
+    private void DeleteTodo(TodoItem todo)
+    {
+        todos.Remove(todo);
+    }
+    
+    private void ToggleTodo(TodoItem todo)
+    {
+        todo.IsCompleted = !todo.IsCompleted;
+        if (todo.IsCompleted)
+        {
+            todo.CompletedDate = DateTime.Now;
+        }
+        else
+        {
+            todo.CompletedDate = null;
+        }
+    }
+    
+    private void ClearCompleted()
+    {
+        todos.RemoveAll(t => t.IsCompleted);
+    }
+    
+    private void ToggleCompletedVisibility()
+    {
+        showCompleted = !showCompleted;
+    }
+    
+    private IEnumerable<TodoItem> GetFilteredTodos()
+    {
+        return showCompleted 
+            ? todos.OrderByDescending(t => t.IsCompleted).ThenByDescending(t => t.CreatedDate)
+            : todos.Where(t => !t.IsCompleted).OrderByDescending(t => t.CreatedDate);
+    }
+    
+    private int GetPendingCount() => todos.Count(t => !t.IsCompleted);
+    private int GetCompletedCount() => todos.Count(t => t.IsCompleted);
+    
+    private class TodoItem
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public DateTime CreatedDate { get; set; } = DateTime.Now;
+        public bool IsCompleted { get; set; }
+        public DateTime? CompletedDate { get; set; }
+    }
+}
